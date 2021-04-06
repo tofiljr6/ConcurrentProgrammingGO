@@ -1,16 +1,13 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"math/rand"
+	"os"
 	"time"
 )
 
-type Node struct {
-	id   int       // node identifier
-	pack chan bool // pack channel is used for demonstrate if the package
-	next *Node
-}
+var server = log.New(os.Stdout, "", 0)
 
 func generateEdges(n int) [][]int {
 	e := make([][]int, n-1)
@@ -80,56 +77,86 @@ func getNexts(v int, e [][]int) []int {
 	return nexts
 }
 
-func producer(link chan<- int) {
-	pack := 0
-	for x := 0; x < k; x++ {
-		sec := rand.Intn(5) + 1
-		fmt.Println("\tWysyłam paczkę za ", sec, "sec")
-
-		pack++
-		fmt.Println("\tWysłałem paczke", pack)
-		link <- pack
+func getNextChannels(next []int, m map[int]chan int) []chan int {
+	result := make([]chan int, 0)
+	for i := 0; i < len(next); i++ {
+		tmp := make(chan int, 1)
+		tmp = m[next[i]]
+		result = append(result, tmp)
 	}
-	close(link)
+	return result
 }
 
-func consumer(link <-chan int, done chan<- bool, next []int) {
-	for pack := range link {
-		fmt.Println("Odebrałem paczkę", pack)
+func generateChannels(n int) map[int]chan int {
+	mm := make(map[int]chan int)
+	for i := 0; i < n; i++ {
+		tmp := make(chan int, 1)
+		mm[i] = tmp
+	}
+	return mm
+}
 
+func producer(nc []chan int) {
+	// nc - nexts channels from current vertices
+	pack := 1000
+	for q := 1; q < k+1; q++ {
+		rand.Seed(time.Now().UnixNano())
 		sec := rand.Intn(5)
-		fmt.Println("Analizuje paczke przez", sec, "sec")
 		time.Sleep(time.Second * time.Duration(sec))
 
-		fmt.Println("Przeanalizowałem pczacke", pack)
-		//
-		index := rand.Intn(len(next))
-		x := next[index]
-		fmt.Println("przesyłam paczkę do wierzchołka", x)
+		randomChannel := rand.Intn(len(nc))
+		server.Println("0 Pakiet", q*pack, "jest w wierchołku 0")
+		nc[randomChannel] <- pack * q
 	}
-	done <- true
 }
 
-const n = 5
-const d = 4 // d <= n + 1
-const k = 6
+func node(id int, in <-chan int, nc []chan int) {
+	for {
+		p := <-in
+		server.Println(id, "Pakiet", p, "jest w wierzchołku", id)
+
+		rand.Seed(time.Now().UnixNano())
+		sec := rand.Intn(5)
+		time.Sleep(time.Second * time.Duration(sec))
+
+		randomChannel := rand.Intn(len(nc))
+		//server.Println("Wysyłam pakiet", p, "do wierzchołka", nc[randomChannel])
+		nc[randomChannel] <- p
+	}
+}
+
+func consumer(id int, in <-chan int, d chan<- bool) {
+	for l := 0; l < k; l++ {
+		p := <-in
+		server.Println(id, "\tPakiet", p, "został odebrany")
+	}
+	d <- true
+}
+
+const n = 5 // G(n-1) 0..n-1
+const d = 2 // d <= n + 1
+const k = 4 // k - number of packages
 
 func main() {
 	// create graph
 	e := generateEdges(n)
 	v := generateVertices(n)
 	e = generateDigests(n, d, e)
+	m := generateChannels(n)
 
-	fmt.Println("E:", e)
-	fmt.Println("V:", v)
+	server.Println("E:", e)
+	server.Println("V:", v)
+	//server.Println(m)
 
-	for i := 0; i < n; i++ {
-		fmt.Println("Dla wierzcholka ", v[i], "następnikami są: ", getNexts(v[i], e))
+	var done = make(chan bool)
+
+	go producer(getNextChannels(getNexts(v[0], e), m))
+
+	for i := 1; i < n-1; i++ {
+		go node(i, m[i], getNextChannels(getNexts(v[i], e), m))
 	}
 
-	link := make(chan int)
-	done := make(chan bool)
-	go producer(link)
-	go consumer(link, done, getNexts(0, e))
+	go consumer(n-1, m[n-1], done)
+
 	<-done
 }
