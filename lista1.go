@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"math/rand"
@@ -117,7 +118,7 @@ func generateArrayHistoryPackages(k int) map[int][]int {
 	return mm
 }
 
-func producer(nc []chan int, vp map[int][]int, pv map[int][]int) {
+func producer(k int, nc []chan int, vp map[int][]int, pv map[int][]int) {
 	// nc - nexts channels from current vertices
 	pack := 1000
 	for q := 1; q < k+1; q++ {
@@ -152,7 +153,7 @@ func node(id int, in <-chan int, nc []chan int, pv map[int][]int, vp map[int][]i
 	}
 }
 
-func consumer(id int, in <-chan int, d chan<- bool, pv map[int][]int, vp map[int][]int) {
+func consumer(k, id int, in <-chan int, d chan<- bool, pv map[int][]int, vp map[int][]int) {
 	for l := 0; l < k; l++ {
 		p := <-in
 		pv[id] = append(pv[id], p)
@@ -164,43 +165,48 @@ func consumer(id int, in <-chan int, d chan<- bool, pv map[int][]int, vp map[int
 	d <- true
 }
 
-const n = 4 // G(n-1) 0..n-1
-const d = 2 // d <= n + 1
-const k = 4 // k - number of packages
-
 func main() {
-	// create graph
-	e := generateEdges(n)
-	v := generateVertices(n)
-	e = generateDigests(n, d, e)
-	m := generateChannels(n)
-	vp := generateArrayHistoryVertices(n) // get history of packages in i-vertices
-	pv := generateArrayHistoryPackages(k)
+	// parse params from command line
+	nPtr := flag.Int("n", 0, "an int") // G(n-1) 0..n-1
+	dPtr := flag.Int("d", 0, "an int") // TODO: catch d <= n + 1
+	kPtr := flag.Int("k", 0, "an int") // k - number of packages
 
-	server.Println("E:", e)
-	server.Println("V:", v)
-	//server.Println(m)
+	flag.Parse()
 
-	var done = make(chan bool)
+	if *nPtr > 0 && *dPtr > 0 && *kPtr > 0 {
+		// create graph
+		e := generateEdges(*nPtr)
+		v := generateVertices(*nPtr)
+		e = generateDigests(*nPtr, *dPtr, e)
+		m := generateChannels(*nPtr)
+		vp := generateArrayHistoryVertices(*nPtr) // get history of packages in i-vertices
+		pv := generateArrayHistoryPackages(*kPtr)
 
-	go producer(getNextChannels(getNexts(v[0], e), m), vp, pv)
+		server.Println("E:", e)
+		server.Println("V:", v)
+		//server.Println(m)
 
-	for i := 1; i < n-1; i++ {
-		go node(i, m[i], getNextChannels(getNexts(v[i], e), m), vp, pv)
-	}
+		var done = make(chan bool)
 
-	go consumer(n-1, m[n-1], done, vp, pv)
+		go producer(*kPtr, getNextChannels(getNexts(v[0], e), m), vp, pv)
 
-	<-done
+		for i := 1; i < *nPtr-1; i++ {
+			go node(i, m[i], getNextChannels(getNexts(v[i], e), m), vp, pv)
+		}
 
-	// Reports
-	fmt.Println("\nWierzchołek -> pakiet")
-	for i := 0; i < n; i++ {
-		fmt.Println(i, "->", vp[i])
-	}
+		go consumer(*kPtr, *nPtr-1, m[*nPtr-1], done, vp, pv)
 
-	fmt.Println("Pakiet -> wierzchołek")
-	for i := 0; i < n; i++ {
-		fmt.Println((i+1)*1000, "->", pv[(i+1)*1000])
+		<-done
+
+		// Reports
+		fmt.Println("\nWierzchołek -> pakiet")
+		for i := 0; i < *nPtr; i++ {
+			fmt.Println(i, "->", vp[i])
+		}
+
+		fmt.Println("Pakiet -> wierzchołek")
+		for i := 0; i < *nPtr; i++ {
+			fmt.Println((i+1)*1000, "->", pv[(i+1)*1000])
+		}
 	}
 }
