@@ -1,9 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"math/rand"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -96,27 +98,52 @@ func generateChannels(n int) map[int]chan int {
 	return mm
 }
 
-func producer(nc []chan int) {
+func generateArrayHistoryVertices(n int) map[int][]int {
+	mm := make(map[int][]int)
+	for i := 0; i < n; i++ {
+		tmp := make([]int, 0)
+		mm[i] = tmp
+	}
+	return mm
+}
+
+func generateArrayHistoryPackages(k int) map[int][]int {
+	mm := make(map[int][]int)
+	pack := 1000
+	for i := 1; i < k+1; i++ {
+		tmp := make([]int, 0)
+		mm[i*pack] = tmp
+	}
+	return mm
+}
+
+func producer(nc []chan int, vp map[int][]int, pv map[int][]int) {
 	// nc - nexts channels from current vertices
 	pack := 1000
 	for q := 1; q < k+1; q++ {
 		rand.Seed(time.Now().UnixNano())
-		sec := rand.Intn(5)
+		sec := rand.Intn(2)
 		time.Sleep(time.Second * time.Duration(sec))
 
 		randomChannel := rand.Intn(len(nc))
-		server.Println("0 Pakiet", q*pack, "jest w wierchołku 0")
+		server.Println("Pakiet", q*pack, "jest w wierchołku 0")
+		vp[0] = append(vp[0], pack*q)
+		pv[pack*q] = append(pv[pack*q], 0) // producers id is 0
 		nc[randomChannel] <- pack * q
 	}
 }
 
-func node(id int, in <-chan int, nc []chan int) {
+func node(id int, in <-chan int, nc []chan int, pv map[int][]int, vp map[int][]int) {
 	for {
 		p := <-in
-		server.Println(id, "Pakiet", p, "jest w wierzchołku", id)
+		pv[id] = append(pv[id], p)
+		vp[p] = append(vp[p], id)
+
+		leftmargin := strings.Repeat("-", id)
+		server.Println(leftmargin, "Pakiet", p, "jest w wierzchołku", id)
 
 		rand.Seed(time.Now().UnixNano())
-		sec := rand.Intn(5)
+		sec := rand.Intn(2)
 		time.Sleep(time.Second * time.Duration(sec))
 
 		randomChannel := rand.Intn(len(nc))
@@ -125,15 +152,19 @@ func node(id int, in <-chan int, nc []chan int) {
 	}
 }
 
-func consumer(id int, in <-chan int, d chan<- bool) {
+func consumer(id int, in <-chan int, d chan<- bool, pv map[int][]int, vp map[int][]int) {
 	for l := 0; l < k; l++ {
 		p := <-in
-		server.Println(id, "\tPakiet", p, "został odebrany")
+		pv[id] = append(pv[id], p)
+		vp[p] = append(vp[p], id)
+
+		leftmargin := strings.Repeat("-", id)
+		server.Println(leftmargin, "Pakiet", p, "został odebrany")
 	}
 	d <- true
 }
 
-const n = 5 // G(n-1) 0..n-1
+const n = 4 // G(n-1) 0..n-1
 const d = 2 // d <= n + 1
 const k = 4 // k - number of packages
 
@@ -143,6 +174,8 @@ func main() {
 	v := generateVertices(n)
 	e = generateDigests(n, d, e)
 	m := generateChannels(n)
+	vp := generateArrayHistoryVertices(n) // get history of packages in i-vertices
+	pv := generateArrayHistoryPackages(k)
 
 	server.Println("E:", e)
 	server.Println("V:", v)
@@ -150,13 +183,24 @@ func main() {
 
 	var done = make(chan bool)
 
-	go producer(getNextChannels(getNexts(v[0], e), m))
+	go producer(getNextChannels(getNexts(v[0], e), m), vp, pv)
 
 	for i := 1; i < n-1; i++ {
-		go node(i, m[i], getNextChannels(getNexts(v[i], e), m))
+		go node(i, m[i], getNextChannels(getNexts(v[i], e), m), vp, pv)
 	}
 
-	go consumer(n-1, m[n-1], done)
+	go consumer(n-1, m[n-1], done, vp, pv)
 
 	<-done
+
+	// Reports
+	fmt.Println("\nWierzchołek -> pakiet")
+	for i := 0; i < n; i++ {
+		fmt.Println(i, "->", vp[i])
+	}
+
+	fmt.Println("Pakiet -> wierzchołek")
+	for i := 0; i < n; i++ {
+		fmt.Println((i+1)*1000, "->", pv[(i+1)*1000])
+	}
 }
