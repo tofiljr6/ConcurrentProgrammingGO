@@ -3,14 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"math/rand"
-	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
-var server = log.New(os.Stdout, "", 0)
+//var server = log.New(os.Stdout, "", 0)
 
 func generateEdges(n int) [][]int {
 	e := make([][]int, n-1)
@@ -118,49 +117,55 @@ func generateArrayHistoryPackages(k int) map[int][]int {
 	return mm
 }
 
-func producer(k int, nc []chan int, vp map[int][]int, pv map[int][]int) {
+func producer(k int, nc []chan int, vp map[int][]int, pv map[int][]int, sp chan string) {
 	// nc - nexts channels from current vertices
 	pack := 1
 	for q := 1; q < k+1; q++ {
 		rand.Seed(time.Now().UnixNano())
-		sec := rand.Intn(2)
+		sec := rand.Intn(10)
 		time.Sleep(time.Second * time.Duration(sec))
 
 		randomChannel := rand.Intn(len(nc))
-		server.Println("Pakiet", q*pack, "jest w wierchołku 0")
+		sp <- fmt.Sprint("Pakiet ", q*pack, " jest w wierchołku 0")
 		vp[0] = append(vp[0], pack*q)
 		pv[pack*q] = append(pv[pack*q], 0) // producers id is 0
 		nc[randomChannel] <- pack * q
 	}
 }
 
-func node(id int, in <-chan int, nc []chan int, pv map[int][]int, vp map[int][]int) {
+func node(id int, in <-chan int, nc []chan int, pv map[int][]int, vp map[int][]int, sp chan string) {
 	for {
 		p := <-in
 		pv[id] = append(pv[id], p)
 		vp[p] = append(vp[p], id)
 
 		leftmargin := strings.Repeat("-", id)
-		server.Println(leftmargin, "Pakiet", p, "jest w wierzchołku", id)
+		sp <- fmt.Sprint(leftmargin, "Pakiet ", p, " jest w wierzchołku ", id)
 
 		rand.Seed(time.Now().UnixNano())
-		sec := rand.Intn(2)
+		//if id % 2 == 0 {
+		//	sec := rand.Intn(2)
+		//	time.Sleep(time.Second * time.Duration(sec))
+		//} else {
+		//	sec := rand.Intn(5)
+		//	time.Sleep(time.Second * time.Duration(sec))
+		//}
+		sec := rand.Intn(12)
 		time.Sleep(time.Second * time.Duration(sec))
 
 		randomChannel := rand.Intn(len(nc))
-		//server.Println("Wysyłam pakiet", p, "do wierzchołka", nc[randomChannel])
 		nc[randomChannel] <- p
 	}
 }
 
-func consumer(k, id int, in <-chan int, d chan<- bool, pv map[int][]int, vp map[int][]int) {
+func consumer(k, id int, in <-chan int, d chan<- bool, pv map[int][]int, vp map[int][]int, sp chan string) {
 	for l := 0; l < k; l++ {
 		p := <-in
 		pv[id] = append(pv[id], p)
 		vp[p] = append(vp[p], id)
 
-		leftmargin := strings.Repeat("-", id)
-		server.Println(leftmargin, "Pakiet", p, "został odebrany")
+		leftmargin := strings.Repeat("~", id)
+		sp <- fmt.Sprint(leftmargin, "Pakiet ", p, " został odebrany")
 	}
 	d <- true
 }
@@ -194,21 +199,34 @@ func main() {
 		fmt.Println("GRAPH:")
 		printGraph(*nPtr-*dPtr, *dPtr, e)
 
-		server.Println("E:", e)
-		server.Println("V:", v)
+		fmt.Println("E:", e)
+		fmt.Println("V:", v)
 		//server.Println(m)
 
 		var done = make(chan bool)
+		var serverPrinter = make(chan string)
 
-		go producer(*kPtr, getNextChannels(getNexts(v[0], e), m), vp, pv)
+		go producer(*kPtr, getNextChannels(getNexts(v[0], e), m), vp, pv, serverPrinter)
 
 		for i := 1; i < *nPtr-1; i++ {
-			go node(i, m[i], getNextChannels(getNexts(v[i], e), m), vp, pv)
+			go node(i, m[i], getNextChannels(getNexts(v[i], e), m), vp, pv, serverPrinter)
 		}
 
-		go consumer(*kPtr, *nPtr-1, m[*nPtr-1], done, vp, pv)
+		go consumer(*kPtr, *nPtr-1, m[*nPtr-1], done, vp, pv, serverPrinter)
 
-		<-done
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			for {
+				select {
+				case sp := <-serverPrinter:
+					fmt.Println(sp)
+				case <-done:
+					wg.Done()
+				}
+			}
+		}()
+		wg.Wait()
 
 		// Reports
 		fmt.Println("\nWierzchołek -> pakiet")
