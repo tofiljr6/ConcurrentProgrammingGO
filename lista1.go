@@ -120,7 +120,7 @@ func generateArrayHistoryPackages(k int) map[int][]int {
 
 func producer(k int, nc []chan int, vp map[int][]int, pv map[int][]int) {
 	// nc - nexts channels from current vertices
-	pack := 1000
+	pack := 1
 	for q := 1; q < k+1; q++ {
 		rand.Seed(time.Now().UnixNano())
 		sec := rand.Intn(2)
@@ -165,15 +165,23 @@ func consumer(k, id int, in <-chan int, d chan<- bool, pv map[int][]int, vp map[
 	d <- true
 }
 
+func printGraph(n, d int, e [][]int) {
+	for i := 0; i < n+1+d; i++ {
+		leftmargin := strings.Repeat("     ", e[i][0])
+		fmt.Println(leftmargin, e[i][0], "->", e[i][1])
+	}
+
+}
+
 func main() {
 	// parse params from command line
 	nPtr := flag.Int("n", 0, "an int") // G(n-1) 0..n-1
-	dPtr := flag.Int("d", 0, "an int") // TODO: catch d <= n + 1
+	dPtr := flag.Int("d", 0, "an int") // d <= n + 1
 	kPtr := flag.Int("k", 0, "an int") // k - number of packages
 
 	flag.Parse()
 
-	if *nPtr > 0 && *dPtr > 0 && *kPtr > 0 {
+	if *nPtr > 0 && *dPtr > 0 && *kPtr > 0 && (*dPtr <= *nPtr+1) {
 		// create graph
 		e := generateEdges(*nPtr)
 		v := generateVertices(*nPtr)
@@ -181,6 +189,10 @@ func main() {
 		m := generateChannels(*nPtr)
 		vp := generateArrayHistoryVertices(*nPtr) // get history of packages in i-vertices
 		pv := generateArrayHistoryPackages(*kPtr)
+
+		// printing graph
+		fmt.Println("GRAPH:")
+		printGraph(*nPtr-*dPtr, *dPtr, e)
 
 		server.Println("E:", e)
 		server.Println("V:", v)
@@ -205,8 +217,10 @@ func main() {
 		}
 
 		fmt.Println("Pakiet -> wierzchołek")
-		for i := 0; i < *nPtr; i++ {
-			fmt.Println((i+1)*1000, "->", pv[(i+1)*1000])
+		for i := 0; i < *kPtr; i++ {
+			fmt.Println((i + 1), "->", pv[(i+1)])
 		}
+	} else {
+		fmt.Println("Nie poprawne parametry")
 	}
 }
