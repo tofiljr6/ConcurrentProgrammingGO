@@ -39,7 +39,7 @@ func generateVertices(n int) []int {
 	return v
 }
 
-func generateDigests(n, d int, e [][]int) [][]int {
+func generateShortcuts(n, d int, e [][]int) [][]int {
 	// generate digests in graph
 	for i := 0; i < d; i += 0 {
 		// create edge
@@ -77,10 +77,52 @@ func generateDigests(n, d int, e [][]int) [][]int {
 	return e
 }
 
+func generateShortcutsBack(n, b int, e [][]int) [][]int {
+	for i := 0; i < b; i += 0 {
+		// create edge
+		tmp := make([]int, 2)
+
+		for {
+			rand.Seed(time.Now().UnixNano())
+			j := rand.Intn(n)
+			k := rand.Intn(n)
+
+			if j-k > 1 {
+				tmp[0] = j
+				tmp[1] = k
+
+				if j == n-1 || k == 0 {
+					// the last is receiver nth node and producer is only one
+					// after producer make all packages => dead
+					break
+				}
+
+				g := 0
+				for l := 0; l < len(e); l++ {
+					if e[l][0] == j && e[l][1] == k {
+						g = -1
+						break
+					}
+				}
+
+				if g != -1 {
+					e = append(e, tmp)
+					i++
+					break
+				}
+			}
+		}
+	}
+
+	return e
+}
+
 func getNexts(v int, e [][]int) []int {
 	nexts := make([]int, 0)
 	for i := 0; i < len(e); i++ {
 		if v == e[i][0] {
+			nexts = append(nexts, e[i][1])
+		} else if v == e[i][0] && e[i][0] > e[i][1] {
 			nexts = append(nexts, e[i][1])
 		}
 	}
@@ -130,7 +172,7 @@ func producer(k int, nc []chan int, vp map[int][]int, pv map[int][]int, sp chan 
 	pack := 1
 	for q := 1; q < k+1; q++ {
 		rand.Seed(time.Now().UnixNano())
-		sec := rand.Float64() * 5
+		sec := rand.Float64() * 2
 		time.Sleep(time.Second * time.Duration(sec))
 
 		randomChannel := rand.Intn(len(nc))
@@ -151,7 +193,7 @@ func node(id int, in <-chan int, nc []chan int, pv map[int][]int, vp map[int][]i
 		sp <- fmt.Sprint(leftmargin, "Pakiet ", p, " jest w wierzchołku ", id)
 
 		rand.Seed(time.Now().UnixNano())
-		sec := rand.Float64() * 5
+		sec := rand.Float64() * 2
 		time.Sleep(time.Second * time.Duration(sec))
 
 		randomChannel := rand.Intn(len(nc))
@@ -171,12 +213,16 @@ func consumer(k, id int, in <-chan int, d chan<- bool, pv map[int][]int, vp map[
 	d <- true
 }
 
-func printGraph(n, d int, e [][]int) {
-	for i := 0; i < n+1+d; i++ {
-		leftmargin := strings.Repeat("     ", e[i][0])
-		fmt.Println(leftmargin, e[i][0], "->", e[i][1])
+func printGraph(e [][]int) {
+	for i := 0; i < len(e); i++ {
+		if e[i][0] < e[i][1] {
+			leftmargin := strings.Repeat("     ", e[i][0])
+			fmt.Println(leftmargin, e[i][0], "->", e[i][1])
+		} else {
+			leftmargin := strings.Repeat("     ", e[i][0]-1)
+			fmt.Println(leftmargin, e[i][1], "<-", e[i][0])
+		}
 	}
-
 }
 
 func main() {
@@ -184,6 +230,7 @@ func main() {
 	nPtr := flag.Int("n", 0, "an int") // G(n-1) 0..n-1
 	dPtr := flag.Int("d", 0, "an int") // d <= n + 1
 	kPtr := flag.Int("k", 0, "an int") // k - number of packages
+	bPtr := flag.Int("b", 0, "an int") // back shortcuts
 
 	flag.Parse()
 
@@ -191,28 +238,37 @@ func main() {
 		// create graph
 		e := generateEdges(*nPtr)
 		v := generateVertices(*nPtr)
-		e = generateDigests(*nPtr, *dPtr, e)
+		e = generateShortcuts(*nPtr, *dPtr, e)
+		e = generateShortcutsBack(*nPtr, *bPtr, e)
 		m := generateChannels(*nPtr)
 		vp := generateArrayHistoryVertices(*nPtr) // get history of packages in i-vertices
 		pv := generateArrayHistoryPackages(*kPtr)
 
 		// printing graph
-		fmt.Println("GRAPH:")
-		printGraph(*nPtr-*dPtr, *dPtr, e)
+		fmt.Println("GRAPH:", *bPtr)
+		printGraph(e)
 
 		fmt.Println("E:", e)
 		fmt.Println("V:", v)
 		//server.Println(m)
 
+		fmt.Println("NEXT:")
+		for i := 0; i < len(v); i++ {
+			fmt.Println("i=", i, getNexts(v[i], e))
+		}
+
 		var done = make(chan bool)
 		var serverPrinter = make(chan string)
 
+		//fmt.Println("id producera", 0)
 		go producer(*kPtr, getNextChannels(getNexts(v[0], e), m), vp, pv, serverPrinter)
 
 		for i := 1; i < *nPtr-1; i++ {
+			//fmt.Println("id consumera", i)
 			go node(i, m[i], getNextChannels(getNexts(v[i], e), m), vp, pv, serverPrinter)
 		}
 
+		//fmt.Println("id receivera", *nPtr-1)
 		go consumer(*kPtr, *nPtr-1, m[*nPtr-1], done, vp, pv, serverPrinter)
 
 		var wg sync.WaitGroup
