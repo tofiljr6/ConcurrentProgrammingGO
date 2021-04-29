@@ -9,8 +9,6 @@ import (
 	"time"
 )
 
-//var server = log.New(os.Stdout, "", 0)
-
 func generateEdges(n int) [][]int {
 	e := make([][]int, n-1)
 	// generate edges in graph
@@ -122,7 +120,7 @@ func producer(k int, nc []chan int, vp map[int][]int, pv map[int][]int, sp chan 
 	pack := 1
 	for q := 1; q < k+1; q++ {
 		rand.Seed(time.Now().UnixNano())
-		sec := rand.Intn(10)
+		sec := rand.Float64() * 5
 		time.Sleep(time.Second * time.Duration(sec))
 
 		randomChannel := rand.Intn(len(nc))
@@ -143,14 +141,7 @@ func node(id int, in <-chan int, nc []chan int, pv map[int][]int, vp map[int][]i
 		sp <- fmt.Sprint(leftmargin, "Pakiet ", p, " jest w wierzchołku ", id)
 
 		rand.Seed(time.Now().UnixNano())
-		//if id % 2 == 0 {
-		//	sec := rand.Intn(2)
-		//	time.Sleep(time.Second * time.Duration(sec))
-		//} else {
-		//	sec := rand.Intn(5)
-		//	time.Sleep(time.Second * time.Duration(sec))
-		//}
-		sec := rand.Intn(12)
+		sec := rand.Float64() * 5
 		time.Sleep(time.Second * time.Duration(sec))
 
 		randomChannel := rand.Intn(len(nc))
