@@ -12,7 +12,7 @@ import (
 func generateEdges(n int) [][]int {
 	e := make([][]int, n-1)
 	// generate edges in graph
-	for i := 0; i < n-1; i++ {
+	for i := 0; i < n-2; i++ {
 		// create edge
 		tmp := make([]int, 2)
 		tmp[0] = i
@@ -21,6 +21,12 @@ func generateEdges(n int) [][]int {
 		// add edge to final array
 		e[i] = tmp
 	}
+
+	// the last one - one receiver
+	tmp := make([]int, 2)
+	tmp[0] = n - 2
+	tmp[1] = n - 1
+	e[n-2] = tmp
 	return e
 }
 
@@ -47,6 +53,10 @@ func generateDigests(n, d int, e [][]int) [][]int {
 			if k-j > 1 {
 				tmp[0] = j
 				tmp[1] = k
+
+				if k == n-1 { // the last is receiver nth node
+					break
+				}
 
 				g := 0 // check that draw by lot is not existed edge
 				for l := 0; l < len(e); l++ {
